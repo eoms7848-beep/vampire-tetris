@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>뱀파이어 무지개 테트리스</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for dark gothic synth sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Google Fonts: Gothic style or clean retro arcade font -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: radial-gradient(circle at center, #2b0808 0%, #080202 100%);
+            color: #f3f4f6;
+            min-height: 100vh;
+            user-select: none;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* 피가 뚝뚝 떨어지는 배경 애니메이션 효과 */
+        .blood-rain {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .blood-drop {
+            position: absolute;
+            background: linear-gradient(to bottom, rgba(255,0,0,0), rgba(220, 20, 60, 0.7));
+            width: 2px;
+            height: 25px;
+            opacity: 0.6;
+            animation: fall linear infinite;
+        }
+        @keyframes fall {
+            0% { transform: translateY(-30px); opacity: 0; }
+            50% { opacity: 0.8; }
+            100% { transform: translateY(105vh); opacity: 0.2; }
+        }
+
+        .gothic-title {
+            font-family: 'Cinzel', serif;
+        }
+        /* Glassmorphism panel styling with bloody borders */
+        .gothic-panel {
+            background: rgba(30, 8, 10, 0.88);
+            border: 1px solid rgba(220, 20, 60, 0.4);
+            box-shadow: 0 10px 30px rgba(100, 0, 0, 0.6), inset 0 0 15px rgba(220, 20, 60, 0.1);
+            position: relative;
+            z-index: 10;
+        }
+        /* Custom canvas glow */
+        canvas {
+            box-shadow: 0 0 30px rgba(220, 20, 60, 0.6);
+            position: relative;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-between min-h-screen p-4 md:p-6">
+
+    <!-- 피가 떨어지는 배경 레이어 -->
+    <div class="blood-rain" id="blood-rain"></div>
+
+    <header class="w-full max-w-md text-center mb-2 relative z-10">
+        <h1 class="gothic-title text-2xl md:text-3xl text-red-500 font-extrabold tracking-widest drop-shadow-[0_2px_15px_rgba(255,0,0,0.8)]">
+            🦇 VAMPIRE BLOODY TETRIS 🩸
+        </h1>
+        <p class="text-xs text-red-300 mt-1">저주받은 성에서 펼쳐지는 핏빛 무지개 테트리스</p>
+    </header>
+
+    <main class="w-full max-w-md flex flex-col items-center gap-4 flex-grow justify-center relative z-10">
+        
+        <!-- 점수 및 상태 패널 -->
+        <div class="w-full gothic-panel rounded-2xl p-4 flex justify-between items-center text-sm">
+            <div class="text-center">
+                <span class="block text-red-300 text-xs">혈흔 점수</span>
+                <span id="score" class="text-red-500 font-bold text-lg">0</span>
+            </div>
+            <div class="text-center">
+                <span class="block text-red-300 text-xs">누적 라인</span>
+                <span id="lines" class="text-purple-400 font-bold text-lg">0</span>
+            </div>
+            <div class="text-center">
+                <span class="block text-red-300 text-xs">레벨</span>
+                <span id="level" class="text-yellow-400 font-bold text-lg">1</span>
+            </div>
+            <button onclick="toggleGame()" id="start-btn" class="bg-gradient-to-r from-red-900 to-black hover:from-red-800 hover:to-red-950 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg border border-red-600/60 transition transform active:scale-95">
+                시작 / 일시정지
+            </button>
+        </div>
+
+        <!-- 테트리스 캔버스 및 다음 블록 프리뷰 영역 -->
+        <div class="flex gap-4 items-start justify-center w-full">
+            <!-- 메인 테트리스 보드 -->
+            <div class="relative bg-black/90 rounded-2xl p-2 border border-red-900/60 shadow-[0_0_20px_rgba(150,0,0,0.3)]">
+                <canvas id="tetris" width="240" height="480" class="rounded-xl block"></canvas>
+                
+                <!-- 게임 오버 또는 대기 오버레이 메시지 -->
+                <div id="overlay-screen" class="absolute inset-0 bg-black/90 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center text-center p-4 z-20">
+                    <div class="text-4xl mb-2">🧛‍♂️🦇</div>
+                    <div id="overlay-title" class="gothic-title text-2xl text-red-500 font-bold mb-2">Vampire's Feast</div>
+                    <p id="overlay-desc" class="text-xs text-red-200 mb-4">어둠의 성에서 피의 보석을 맞추세요</p>
+                    <button onclick="toggleGame()" class="bg-red-800 hover:bg-red-700 text-white font-bold px-6 py-2 rounded-xl shadow-md text-sm border border-red-500/60">
+                        게임 시작 🩸
+                    </button>
+                </div>
+            </div>
+
+            <!-- 우측 사이드 패널 (다음 블록 & 컨트롤 팁) -->
+            <div class="flex flex-col gap-4 w-32">
+                <!-- 다음 블록 표시 -->
+                <div class="gothic-panel rounded-xl p-3 text-center flex flex-col items-center">
+                    <span class="text-xs text-red-300 font-semibold mb-2">다음 혈석 🦇</span>
+                    <div class="bg-black/80 rounded-lg p-2 w-full flex items-center justify-center border border-red-900/30">
+                        <canvas id="next-piece" width="80" height="80" class="block"></canvas>
+                    </div>
+                </div>
+
+                <!-- 터치/모바일 가상 패드 -->
+                <div class="gothic-panel rounded-xl p-3 flex flex-col gap-2">
+                    <span class="text-[10px] text-red-300 text-center font-bold">컨트롤러</span>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div></div>
+                        <button onclick="movePlayer(-1)" class="bg-red-950/80 hover:bg-red-900 text-white py-2 rounded font-bold text-xs border border-red-800/40">◀</button>
+                        <div></div>
+                        <button onclick="rotatePlayer()" class="bg-red-950/80 hover:bg-red-900 text-white py-2 rounded font-bold text-xs border border-red-800/40">🔄</button>
+                        <button onclick="dropPlayer()" class="bg-red-950/80 hover:bg-red-900 text-white py-2 rounded font-bold text-xs border border-red-800/40">▼</button>
+                        <button onclick="movePlayer(1)" class="bg-red-950/80 hover:bg-red-900 text-white py-2 rounded font-bold text-xs border border-red-800/40">▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="text-center text-red-400/80 text-[11px] mt-2 relative z-10">
+        뱀파이어 무지개 테트리스 · 키보드 방향키 또는 화면 버튼으로 조작하세요 🩸🦇✨
+    </footer>
+
+    <script>
+        // 피가 떨어지는 배경 생성 함수
+        function createBloodRain() {
+            const container = document.getElementById('blood-rain');
+            const dropCount = 25;
+            for (let i = 0; i < dropCount; i++) {
+                const drop = document.createElement('div');
+                drop.className = 'blood-drop';
+                drop.style.left = `${Math.random() * 100}%`;
+                drop.style.top = `-${Math.random() * 20}px`;
+                drop.style.animationDuration = `${1.5 + Math.random() * 2.5}s`;
+                drop.style.animationDelay = `${Math.random() * 3}s`;
+                container.appendChild(drop);
+            }
+        }
+        createBloodRain();
+
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('next-piece');
+        const nextContext = nextCanvas.getContext('2d');
+
+        const BLOCK_SIZE = 20;
+        context.scale(BLOCK_SIZE, BLOCK_SIZE);
+        nextContext.scale(BLOCK_SIZE, BLOCK_SIZE);
+
+        // 뱀파이어 무지개 테마 색상 팔레트 (각 블록별 핏빛/무지개 톤)
+        const colors = [
+            null,
+            '#dc2626', // 1: 붉은 피 혈석 (Red)
+            '#ea580c', // 2: 주황 불꽃 (Orange)
+            '#ca8a04', // 3: 황금 박쥐 보석 (Yellow)
+            '#16a34a', // 4: 초록 독기 (Green)
+            '#0891b2', // 5: 얼어붙은 푸른빛 (Cyan)
+            '#7c3aed', // 6: 보라색 마력 (Purple)
+            '#db2777'  // 7: 핑크 장미 (Pink)
+        ];
+
+        function createMatrix(w, h) {
+            const matrix = [];
+            while (h--) {
+                matrix.push(new Array(w).fill(0));
+            }
+            return matrix;
+        }
+
+        function createPiece(type) {
+            if (type === 'T') {
+                return [
+                    [0, 0, 0],
+                    [3, 3, 3],
+                    [0, 3, 0],
+                ];
+            } else if (type === 'O') {
+                return [
+                    [4, 4],
+                    [4, 4],
+                ];
+            } else if (type === 'L') {
+                return [
+                    [0, 5, 0],
+                    [0, 5, 0],
+                    [0, 5, 5],
+                ];
+            } else if (type === 'J') {
+                return [
+                    [0, 6, 0],
+                    [0, 6, 0],
+                    [6, 6, 0],
+                ];
+            } else if (type === 'I') {
+                return [
+                    [0, 7, 0, 0],
+                    [0, 7, 0, 0],
+                    [0, 7, 0, 0],
+                    [0, 7, 0, 0],
+                ];
+            } else if (type === 'S') {
+                return [
+                    [0, 1, 1],
+                    [1, 1, 0],
+                    [0, 0, 0],
+                ];
+            } else if (type === 'Z') {
+                return [
+                    [2, 2, 0],
+                    [0, 2, 2],
+                    [0, 0, 0],
+                ];
+            }
+        }
+
+        const arena = createMatrix(12, 24);
+
+        const player = {
+            pos: { x: 0, y: 0 },
+            matrix: null,
+            score: 0,
+            lines: 0,
+            level: 1
+        };
+
+        const nextPlayer = {
+            matrix: null
+        };
+
+        let dropCounter = 0;
+        let dropInterval = 1000;
+        let lastTime = 0;
+        let isRunning = false;
+        let soundEnabled = false;
+
+        const synth = new Tone.Synth({
+            oscillator: { type: "sawtooth" },
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.4 }
+        }).toDestination();
+
+        function initAudio() {
+            if (!soundEnabled) {
+                Tone.start();
+                soundEnabled = true;
+            }
+        }
+
+        function playSound(note, duration = '8n') {
+            initAudio();
+            try {
+                synth.triggerAttackRelease(note, duration);
+            } catch(e) {}
+        }
+
+        function collide(arena, player) {
+            const m = player.matrix;
+            const o = player.pos;
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 &&
+                       (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        arena[y + player.pos.y][x + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        function arenaSweep() {
+            let cleared = 0;
+            outer: for (let y = arena.length - 1; y > 0; --y) {
+                for (let x = 0; x < arena[y].length; ++x) {
+                    if (arena[y][x] === 0) {
+                        continue outer;
+                    }
+                }
+                const row = arena.splice(y, 1)[0].fill(0);
+                arena.unshift(row);
+                ++y;
+                cleared++;
+                playSound('E4', '4n');
+            }
+
+            if (cleared > 0) {
+                player.lines += cleared;
+                player.score += cleared * 150 * player.level;
+                player.level = Math.floor(player.lines / 5) + 1;
+                dropInterval = Math.max(200, 1000 - (player.level - 1) * 120);
+                updateScore();
+            }
+        }
+
+        function rotate(matrix, dir) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [
+                        matrix[x][y],
+                        matrix[y][x],
+                    ] = [
+                        matrix[y][x],
+                        matrix[x][y],
+                    ];
+                }
+            }
+            if (dir > 0) {
+                matrix.forEach(row => row.reverse());
+            } else {
+                matrix.reverse();
+            }
+        }
+
+        function playerRotate() {
+            if (!player.matrix) return;
+            const posX = player.pos.x;
+            let offset = 1;
+            rotate(player.matrix, 1);
+            while (collide(arena, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > player.matrix[0].length) {
+                    rotate(player.matrix, -1);
+                    player.pos.x = posX;
+                    return;
+                }
+            }
+            playSound('G3');
+        }
+
+        function movePlayer(dir) {
+            if (!player.matrix) return;
+            player.pos.x += dir;
+            if (collide(arena, player)) {
+                player.pos.x -= dir;
+            } else {
+                playSound('C3');
+            }
+        }
+
+        function dropPlayer() {
+            if (!player.matrix) return;
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+                arenaSweep();
+            }
+            dropCounter = 0;
+        }
+
+        function playerReset() {
+            const pieces = 'TJLOSZI';
+            if (nextPlayer.matrix === null) {
+                nextPlayer.matrix = createPiece(pieces[(pieces.length * Math.random()) | 0]);
+            }
+            
+            player.matrix = nextPlayer.matrix;
+            nextPlayer.matrix = createPiece(pieces[(pieces.length * Math.random()) | 0]);
+
+            player.pos.y = 0;
+            player.pos.x = ((arena[0].length / 2) | 0) - ((player.matrix[0].length / 2) | 0);
+
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+                player.score = 0;
+                player.lines = 0;
+                player.level = 1;
+                dropInterval = 1000;
+                updateScore();
+                stopGame();
+                showGameOverOverlay();
+            }
+        }
+
+        // 블록 내부마다 박쥐(🦇) 아이콘을 그려넣는 렌더링 함수
+        function drawMatrix(mat, offset, ctx = context) {
+            if (!mat) return;
+            mat.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        const px = x + offset.x;
+                        const py = y + offset.y;
+
+                        // 블록 배경 컬러 및 입체 보더
+                        ctx.fillStyle = colors[value];
+                        ctx.fillRect(px, py, 1, 1);
+
+                        ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+                        ctx.lineWidth = 0.08;
+                        ctx.strokeRect(px, py, 1, 1);
+
+                        // 블록 안에 박쥐 기호(🦇) 각인
+                        ctx.save();
+                        ctx.font = '0.65px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillText('🦇', px + 0.5, py + 0.52);
+                        ctx.restore();
+                    }
+                });
+            });
+        }
+
+        function draw() {
+            context.fillStyle = '#080202';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawMatrix(arena, { x: 0, y: 0 });
+            if (player.matrix) {
+                drawMatrix(player.matrix, player.pos);
+            }
+
+            nextContext.fillStyle = '#080202';
+            nextContext.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+            if (nextPlayer.matrix) {
+                const offsetX = (4 - nextPlayer.matrix[0].length) / 2;
+                const offsetY = (4 - nextPlayer.matrix.length) / 2;
+                drawMatrix(nextPlayer.matrix, { x: offsetX, y: offsetY }, nextContext);
+            }
+        }
+
+        function updateScore() {
+            document.getElementById('score').innerText = player.score;
+            document.getElementById('lines').innerText = player.lines;
+            document.getElementById('level').innerText = player.level;
+        }
+
+        function gameLoop(time = 0) {
+            if (!isRunning) return;
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            dropCounter += deltaTime;
+
+            if (dropCounter > dropInterval) {
+                dropPlayer();
+            }
+
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function toggleGame() {
+            if (isRunning) {
+                stopGame();
+                showPauseOverlay();
+            } else {
+                startGothicGame();
+            }
+        }
+
+        function startGothicGame() {
+            initAudio();
+            document.getElementById('overlay-screen').classList.add('hidden');
+            if (player.matrix === null) {
+                playerReset();
+            }
+            isRunning = true;
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function stopGame() {
+            isRunning = false;
+        }
+
+        function showGameOverOverlay() {
+            document.getElementById('overlay-title').innerText = "Game Over";
+            document.getElementById('overlay-desc').innerText = "피의 보석이 성을 완전히 잠식했습니다...";
+            document.getElementById('overlay-screen').classList.remove('hidden');
+        }
+
+        function showPauseOverlay() {
+            document.getElementById('overlay-title').innerText = "Vampire's Feast";
+            document.getElementById('overlay-desc').innerText = "일시정지 중입니다. 계속하려면 누르세요.";
+            document.getElementById('overlay-screen').classList.remove('hidden');
+        }
+
+        document.addEventListener('keydown', event => {
+            if (!isRunning) return;
+            if (event.key === 'ArrowLeft') {
+                movePlayer(-1);
+            } else if (event.key === 'ArrowRight') {
+                movePlayer(1);
+            } else if (event.key === 'ArrowDown') {
+                dropPlayer();
+            } else if (event.key === 'ArrowUp') {
+                playerRotate();
+            }
+        });
+
+        draw();
+    </script>
+</body>
+</html>
